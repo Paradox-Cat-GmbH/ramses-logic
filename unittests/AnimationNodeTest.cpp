@@ -15,7 +15,12 @@
 #include "ramses-logic/Property.h"
 #include "impl/AnimationNodeImpl.h"
 #include "impl/DataArrayImpl.h"
+#include "impl/PropertyImpl.h"
 #include "internals/ErrorReporting.h"
+#include "internals/SerializationMap.h"
+#include "internals/DeserializationMap.h"
+#include "internals/TypeData.h"
+#include "internals/EPropertySemantics.h"
 #include "generated/AnimationNodeGen.h"
 #include "flatbuffers/flatbuffers.h"
 #include <numeric>
@@ -159,15 +164,17 @@ namespace rlogic::internal
 
         const auto rootIn = animNode->getInputs();
         EXPECT_EQ("IN", rootIn->getName());
-        ASSERT_EQ(4u, rootIn->getChildCount());
+        ASSERT_EQ(5u, rootIn->getChildCount());
         EXPECT_EQ("timeDelta", rootIn->getChild(0u)->getName());
         EXPECT_EQ("play", rootIn->getChild(1u)->getName());
         EXPECT_EQ("loop", rootIn->getChild(2u)->getName());
         EXPECT_EQ("rewindOnStop", rootIn->getChild(3u)->getName());
+        EXPECT_EQ("timeRange", rootIn->getChild(4u)->getName());
         EXPECT_EQ(EPropertyType::Float, rootIn->getChild(0u)->getType());
         EXPECT_EQ(EPropertyType::Bool, rootIn->getChild(1u)->getType());
         EXPECT_EQ(EPropertyType::Bool, rootIn->getChild(2u)->getType());
         EXPECT_EQ(EPropertyType::Bool, rootIn->getChild(3u)->getType());
+        EXPECT_EQ(EPropertyType::Vec2f, rootIn->getChild(4u)->getType());
 
         const auto rootOut = animNode->getOutputs();
         EXPECT_EQ("OUT", rootOut->getName());
@@ -348,15 +355,17 @@ namespace rlogic::internal
         {
             const auto rootIn = animNode->getInputs();
             EXPECT_EQ("IN", rootIn->getName());
-            ASSERT_EQ(4u, rootIn->getChildCount());
+            ASSERT_EQ(5u, rootIn->getChildCount());
             EXPECT_EQ("timeDelta", rootIn->getChild(0u)->getName());
             EXPECT_EQ("play", rootIn->getChild(1u)->getName());
             EXPECT_EQ("loop", rootIn->getChild(2u)->getName());
             EXPECT_EQ("rewindOnStop", rootIn->getChild(3u)->getName());
+            EXPECT_EQ("timeRange", rootIn->getChild(4u)->getName());
             EXPECT_EQ(EPropertyType::Float, rootIn->getChild(0u)->getType());
             EXPECT_EQ(EPropertyType::Bool, rootIn->getChild(1u)->getType());
             EXPECT_EQ(EPropertyType::Bool, rootIn->getChild(2u)->getType());
             EXPECT_EQ(EPropertyType::Bool, rootIn->getChild(3u)->getType());
+            EXPECT_EQ(EPropertyType::Vec2f, rootIn->getChild(4u)->getType());
 
             const auto rootOut = animNode->getOutputs();
             EXPECT_EQ("OUT", rootOut->getName());
@@ -385,6 +394,7 @@ namespace rlogic::internal
     {
         WithTempDirectory tempDir;
 
+        const vec2f timeRange{ 1.f, 2.f };
         {
             LogicEngine otherEngine;
 
@@ -396,10 +406,11 @@ namespace rlogic::internal
             EXPECT_TRUE(animNode->getInputs()->getChild("play")->set(true));
             EXPECT_TRUE(animNode->getInputs()->getChild("loop")->set(true));
             EXPECT_TRUE(animNode->getInputs()->getChild("rewindOnStop")->set(true));
+            EXPECT_TRUE(animNode->getInputs()->getChild("timeRange")->set(timeRange));
             EXPECT_TRUE(animNode->getInputs()->getChild("timeDelta")->set(3.5f));
             EXPECT_TRUE(otherEngine.update());
             EXPECT_EQ(15, *animNode->getOutputs()->getChild("channel")->get<int32_t>());
-            EXPECT_FLOAT_EQ(0.75f, *animNode->getOutputs()->getChild("progress")->get<float>());
+            EXPECT_FLOAT_EQ(0.5f, *animNode->getOutputs()->getChild("progress")->get<float>());
 
             ASSERT_TRUE(otherEngine.saveToFile("logic_animNodes.bin"));
         }
@@ -416,6 +427,7 @@ namespace rlogic::internal
         EXPECT_TRUE(*animNode->getInputs()->getChild("play")->get<bool>());
         EXPECT_TRUE(*animNode->getInputs()->getChild("loop")->get<bool>());
         EXPECT_TRUE(*animNode->getInputs()->getChild("rewindOnStop")->get<bool>());
+        EXPECT_EQ(timeRange, *animNode->getInputs()->getChild("timeRange")->get<vec2f>());
         EXPECT_EQ(10, *animNode->getOutputs()->getChild("channel")->get<int32_t>());
         EXPECT_FLOAT_EQ(0.f, *animNode->getOutputs()->getChild("progress")->get<float>());
 
@@ -724,6 +736,130 @@ namespace rlogic::internal
         advanceAnimationAndExpectValues(*animNode, 0.4f, 18.f);
     }
 
+    TEST_F(AnAnimationNode, WillPlayAnimationWithinGivenTimeRange)
+    {
+        const auto timeStamps = m_logicEngine.createDataArray(std::vector<float>{ 10.f, 20.f, 30.f, 40.f });
+        const auto data = m_logicEngine.createDataArray(std::vector<float>{ { 10.f, 20.f, 30.f, 40.f } });
+        const auto animNode = m_logicEngine.createAnimationNode({ { "channel", timeStamps, data, EInterpolationType::Linear } });
+
+        animNode->getInputs()->getChild("play")->set(true);
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 20.f, 30.f });
+        advanceAnimationAndExpectValues(*animNode, 0.f, 20.f); // start at time range beginning
+        advanceAnimationAndExpectValues(*animNode, 5.f, 25.f);
+        advanceAnimationAndExpectValues(*animNode, 5.f, 30.f);
+        advanceAnimationAndExpectValues(*animNode, 5.f, 30.f); // stays at time range end
+    }
+
+    TEST_F(AnAnimationNode, WillStopAtTimeRangeEnd)
+    {
+        const auto timeStamps = m_logicEngine.createDataArray(std::vector<float>{ 10.f, 20.f, 30.f, 40.f });
+        const auto data = m_logicEngine.createDataArray(std::vector<float>{ { 10.f, 20.f, 30.f, 40.f } });
+        const auto animNode = m_logicEngine.createAnimationNode({ { "channel", timeStamps, data, EInterpolationType::Linear } });
+
+        animNode->getInputs()->getChild("play")->set(true);
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 20.f, 30.f });
+        advanceAnimationAndExpectValues(*animNode, 100.f, 30.f); // stays at time range end
+    }
+
+    TEST_F(AnAnimationNode, WillRewindToBeginningOfTimeRange)
+    {
+        const auto timeStamps = m_logicEngine.createDataArray(std::vector<float>{ 10.f, 20.f, 30.f, 40.f });
+        const auto data = m_logicEngine.createDataArray(std::vector<float>{ { 10.f, 20.f, 30.f, 40.f } });
+        const auto animNode = m_logicEngine.createAnimationNode({ { "channel", timeStamps, data, EInterpolationType::Linear } });
+
+        animNode->getInputs()->getChild("play")->set(true);
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 20.f, 30.f });
+        advanceAnimationAndExpectValues(*animNode, 100.f, 30.f); // stays at time range end
+        animNode->getInputs()->getChild("play")->set(false); // animation finished and stopped
+
+        animNode->getInputs()->getChild("rewindOnStop")->set(true); // will rewind
+        advanceAnimationAndExpectValues(*animNode, 0.f, 20.f); // rewinds to time range beginning
+
+        animNode->getInputs()->getChild("play")->set(true);
+        advanceAnimationAndExpectValues(*animNode, 5.f, 25.f);
+        advanceAnimationAndExpectValues(*animNode, 100.f, 30.f); // stays at time range end
+    }
+
+    TEST_F(AnAnimationNode, WillLoopWithinTimeRange)
+    {
+        const auto timeStamps = m_logicEngine.createDataArray(std::vector<float>{ 10.f, 20.f, 30.f, 40.f });
+        const auto data = m_logicEngine.createDataArray(std::vector<float>{ { 10.f, 20.f, 30.f, 40.f } });
+        const auto animNode = m_logicEngine.createAnimationNode({ { "channel", timeStamps, data, EInterpolationType::Linear } });
+
+        animNode->getInputs()->getChild("play")->set(true);
+        animNode->getInputs()->getChild("loop")->set(true);
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 20.f, 30.f });
+        advanceAnimationAndExpectValues(*animNode, 0.f, 20.f);
+        advanceAnimationAndExpectValues(*animNode, 5.f, 25.f);
+        advanceAnimationAndExpectValues(*animNode, 6.f, 21.f); // next loop
+        advanceAnimationAndExpectValues(*animNode, 10.f, 21.f); // next loop
+        advanceAnimationAndExpectValues(*animNode, 101.f, 22.f); // next several loops
+    }
+
+    TEST_F(AnAnimationNode, WillUseOriginalDurationAsTimeRangeEndIfTimeRangeEndNotSpecified)
+    {
+        const auto timeStamps = m_logicEngine.createDataArray(std::vector<float>{ 10.f, 20.f, 30.f, 40.f });
+        const auto data = m_logicEngine.createDataArray(std::vector<float>{ { 10.f, 20.f, 30.f, 40.f } });
+        const auto animNode = m_logicEngine.createAnimationNode({ { "channel", timeStamps, data, EInterpolationType::Linear } });
+
+        animNode->getInputs()->getChild("play")->set(true);
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 20.f, 0.f }); // unspecified time range end
+        advanceAnimationAndExpectValues(*animNode, 0.f, 20.f); // start at time range beginning
+        advanceAnimationAndExpectValues(*animNode, 100.f, 40.f); // stays at animation end
+    }
+
+    TEST_F(AnAnimationNode, CanChangeTimeRangeWhilePlayingAndAlwaysStaysWithinGivenTimeRange)
+    {
+        const auto timeStamps = m_logicEngine.createDataArray(std::vector<float>{ 10.f, 20.f, 30.f, 40.f });
+        const auto data = m_logicEngine.createDataArray(std::vector<float>{ { 10.f, 20.f, 30.f, 40.f } });
+        const auto animNode = m_logicEngine.createAnimationNode({ { "channel", timeStamps, data, EInterpolationType::Linear } });
+
+        animNode->getInputs()->getChild("play")->set(true);
+        animNode->getInputs()->getChild("loop")->set(true);
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 20.f, 30.f });
+        // loop within (20, 30) time range
+        advanceAnimationAndExpectValues(*animNode, 0.f, 20.f);
+        advanceAnimationAndExpectValues(*animNode, 5.f, 25.f);
+        advanceAnimationAndExpectValues(*animNode, 6.f, 21.f);
+        // jump to a (30, 40) time range
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 30.f, 40.f });
+        advanceAnimationAndExpectValues(*animNode, 0.f, 31.f); // starts off with same offset as in previous time range
+        advanceAnimationAndExpectValues(*animNode, 8.f, 39.f);
+        // jump to a (10, 20) time range
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 10.f, 20.f });
+        advanceAnimationAndExpectValues(*animNode, 0.f, 19.f); // again starts off with same offset as in previous time range
+        advanceAnimationAndExpectValues(*animNode, 2.f, 11.f); // loops within this range
+        // extend range to (10, 30)
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 10.f, 30.f });
+        advanceAnimationAndExpectValues(*animNode, 0.f, 11.f); // no change as time range beginning did not change
+        advanceAnimationAndExpectValues(*animNode, 18.f, 29.f); // plays in extended range
+        advanceAnimationAndExpectValues(*animNode, 2.f, 11.f); // loops within this range
+    }
+
+    TEST_F(AnAnimationNode, WillFailUpdateIfTimeRangeInvalid)
+    {
+        const auto timeStamps = m_logicEngine.createDataArray(std::vector<float>{ 10.f, 20.f, 30.f, 40.f });
+        const auto data = m_logicEngine.createDataArray(std::vector<float>{ { 10.f, 20.f, 30.f, 40.f } });
+        const auto animNode = m_logicEngine.createAnimationNode({ { "channel", timeStamps, data, EInterpolationType::Linear } }, "anim");
+
+        animNode->getInputs()->getChild("play")->set(true);
+
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 30.f, 20.f });
+        EXPECT_FALSE(m_logicEngine.update());
+        ASSERT_FALSE(m_logicEngine.getErrors().empty());
+        EXPECT_EQ("AnimationNode 'anim' failed to update - time range begin must be smaller than end and not negative (given time range [30, 20])", m_logicEngine.getErrors().front().message);
+
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ -1.f, 20.f });
+        EXPECT_FALSE(m_logicEngine.update());
+        ASSERT_FALSE(m_logicEngine.getErrors().empty());
+        EXPECT_EQ("AnimationNode 'anim' failed to update - time range begin must be smaller than end and not negative (given time range [-1, 20])", m_logicEngine.getErrors().front().message);
+
+        animNode->getInputs()->getChild("timeRange")->set(vec2f{ 1.f, 1.f });
+        EXPECT_FALSE(m_logicEngine.update());
+        ASSERT_FALSE(m_logicEngine.getErrors().empty());
+        EXPECT_EQ("AnimationNode 'anim' failed to update - time range begin must be smaller than end and not negative (given time range [1, 1])", m_logicEngine.getErrors().front().message);
+    }
+
     TEST_F(AnAnimationNode, GivesStableResultsWithExtremelySmallTimeDelta)
     {
         constexpr float Eps = std::numeric_limits<float>::epsilon();
@@ -758,6 +894,7 @@ namespace rlogic::internal
         {
             AllValid,
             NameMissing,
+            IdMissing,
             ChannelsMissing,
             RootInMissing,
             RootOutMissing,
@@ -795,6 +932,7 @@ namespace rlogic::internal
                     inputs.children.push_back(MakeType("play", EPropertyType::Bool));
                 inputs.children.push_back(MakeType("loop", EPropertyType::Bool));
                 inputs.children.push_back(MakeType("rewindOnStop", EPropertyType::Bool));
+                inputs.children.push_back(MakeType("timeRange", EPropertyType::Vec2f));
                 auto inputsImpl = std::make_unique<PropertyImpl>(std::move(inputs), EPropertySemantics::AnimationInput);
 
                 HierarchicalTypeData outputs = MakeStruct("OUT", {});
@@ -829,6 +967,7 @@ namespace rlogic::internal
                 const auto animNodeFB = rlogic_serialization::CreateAnimationNode(
                     flatBufferBuilder,
                     issue == ESerializationIssue::NameMissing ? 0 : flatBufferBuilder.CreateString("animNode"),
+                    issue == ESerializationIssue::IdMissing ? 0 : 1u,
                     issue == ESerializationIssue::ChannelsMissing ? 0 : flatBufferBuilder.CreateVector(channelsFB),
                     issue == ESerializationIssue::RootInMissing ? 0 : PropertyImpl::Serialize(*inputsImpl, flatBufferBuilder, serializationMap),
                     issue == ESerializationIssue::RootOutMissing ? 0 : PropertyImpl::Serialize(*outputsImpl, flatBufferBuilder, serializationMap)
@@ -849,11 +988,11 @@ namespace rlogic::internal
         EXPECT_TRUE(deserializeSerializedDataWithIssue(AnAnimationNode_SerializationLifecycle::ESerializationIssue::AllValid));
         EXPECT_TRUE(m_errorReporting.getErrors().empty());
 
-        for (const auto issue : { ESerializationIssue::NameMissing, ESerializationIssue::ChannelsMissing, ESerializationIssue::RootInMissing, ESerializationIssue::RootOutMissing })
+        for (const auto issue : { ESerializationIssue::NameMissing, ESerializationIssue::IdMissing, ESerializationIssue::ChannelsMissing, ESerializationIssue::RootInMissing, ESerializationIssue::RootOutMissing })
         {
             EXPECT_FALSE(deserializeSerializedDataWithIssue(issue));
             ASSERT_FALSE(m_errorReporting.getErrors().empty());
-            EXPECT_EQ("Fatal error during loading of AnimationNode from serialized data: missing name, channels or in/out property data!", m_errorReporting.getErrors().front().message);
+            EXPECT_EQ("Fatal error during loading of AnimationNode from serialized data: missing name, id, channels or in/out property data!", m_errorReporting.getErrors().front().message);
             m_errorReporting.clear();
         }
     }

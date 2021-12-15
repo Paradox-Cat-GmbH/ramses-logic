@@ -373,6 +373,12 @@ namespace rlogic::internal
                 end
             )", {}, "luascript");
 
+            logicEngine.createLuaModule(R"(
+                local mymath = {}
+                mymath.PI=3.1415
+                return mymath
+            )", {}, "luamodule");
+
             logicEngine.createRamsesAppearanceBinding(*m_appearance, "appearancebinding");
             logicEngine.createRamsesNodeBinding(*m_node, ERotationType::Euler_XYZ, "nodebinding");
             logicEngine.createRamsesCameraBinding(*m_camera, "camerabinding");
@@ -386,33 +392,47 @@ namespace rlogic::internal
             EXPECT_TRUE(m_logicEngine.getErrors().empty());
 
             {
-                auto script = m_logicEngine.findScript("luascript");
-                ASSERT_NE(nullptr, script);
-                const auto inputs = script->getInputs();
+                auto scriptByName = m_logicEngine.findScript("luascript");
+                auto scriptById = m_logicEngine.findLogicObjectById(1u);
+                ASSERT_NE(nullptr, scriptByName);
+                ASSERT_EQ(scriptById, scriptByName);
+                const auto inputs = scriptByName->getInputs();
                 ASSERT_NE(nullptr, inputs);
                 EXPECT_EQ(1u, inputs->getChildCount());
-                EXPECT_TRUE(script->m_impl.isDirty());
+                EXPECT_TRUE(scriptByName->m_impl.isDirty());
             }
             {
-                auto rNodeBinding = m_logicEngine.findNodeBinding("nodebinding");
-                ASSERT_NE(nullptr, rNodeBinding);
-                const auto inputs = rNodeBinding->getInputs();
+                auto moduleByName = m_logicEngine.findLuaModule("luamodule");
+                auto moduleById   = m_logicEngine.findLogicObjectById(2u);
+                ASSERT_NE(nullptr, moduleByName);
+                ASSERT_EQ(moduleById, moduleByName);
+            }
+            {
+                auto rNodeBindingByName = m_logicEngine.findNodeBinding("nodebinding");
+                auto rNodeBindingById = m_logicEngine.findLogicObjectById(4u);
+                ASSERT_NE(nullptr, rNodeBindingByName);
+                ASSERT_EQ(rNodeBindingById, rNodeBindingByName);
+                const auto inputs = rNodeBindingByName->getInputs();
                 ASSERT_NE(nullptr, inputs);
                 EXPECT_EQ(4u, inputs->getChildCount());
-                EXPECT_TRUE(rNodeBinding->m_impl.isDirty());
+                EXPECT_TRUE(rNodeBindingByName->m_impl.isDirty());
             }
             {
-                auto rCameraBinding = m_logicEngine.findCameraBinding("camerabinding");
-                ASSERT_NE(nullptr, rCameraBinding);
-                const auto inputs = rCameraBinding->getInputs();
+                auto rCameraBindingByName = m_logicEngine.findCameraBinding("camerabinding");
+                auto rCameraBindingById = m_logicEngine.findLogicObjectById(5u);
+                ASSERT_NE(nullptr, rCameraBindingByName);
+                ASSERT_EQ(rCameraBindingById, rCameraBindingByName);
+                const auto inputs = rCameraBindingByName->getInputs();
                 ASSERT_NE(nullptr, inputs);
                 EXPECT_EQ(2u, inputs->getChildCount());
-                EXPECT_TRUE(rCameraBinding->m_impl.isDirty());
+                EXPECT_TRUE(rCameraBindingByName->m_impl.isDirty());
             }
             {
-                auto rAppearanceBinding = m_logicEngine.findAppearanceBinding("appearancebinding");
-                ASSERT_NE(nullptr, rAppearanceBinding);
-                const auto inputs = rAppearanceBinding->getInputs();
+                auto rAppearanceBindingByName = m_logicEngine.findAppearanceBinding("appearancebinding");
+                auto rAppearanceBindingById = m_logicEngine.findLogicObjectById(3u);
+                ASSERT_NE(nullptr, rAppearanceBindingByName);
+                ASSERT_EQ(rAppearanceBindingById, rAppearanceBindingByName);
+                const auto inputs = rAppearanceBindingByName->getInputs();
                 ASSERT_NE(nullptr, inputs);
 
                 ASSERT_EQ(1u, inputs->getChildCount());
@@ -420,21 +440,25 @@ namespace rlogic::internal
                 ASSERT_NE(nullptr, floatUniform);
                 EXPECT_EQ("floatUniform", floatUniform->getName());
                 EXPECT_EQ(EPropertyType::Float, floatUniform->getType());
-                EXPECT_TRUE(rAppearanceBinding->m_impl.isDirty());
+                EXPECT_TRUE(rAppearanceBindingByName->m_impl.isDirty());
             }
             {
-                const auto dataArray = m_logicEngine.findDataArray("dataarray");
-                ASSERT_NE(nullptr, dataArray);
-                EXPECT_EQ(EPropertyType::Float, dataArray->getDataType());
-                ASSERT_NE(nullptr, dataArray->getData<float>());
+                const auto dataArrayByName = m_logicEngine.findDataArray("dataarray");
+                const auto dataArrayById = m_logicEngine.findLogicObjectById(6u);
+                ASSERT_NE(nullptr, dataArrayByName);
+                ASSERT_EQ(dataArrayById, dataArrayByName);
+                EXPECT_EQ(EPropertyType::Float, dataArrayByName->getDataType());
+                ASSERT_NE(nullptr, dataArrayByName->getData<float>());
                 const std::vector<float> expectedData{ 1.f, 2.f };
                 EXPECT_EQ(expectedData, *m_logicEngine.findDataArray("dataarray")->getData<float>());
 
-                const auto animNode = m_logicEngine.findAnimationNode("animNode");
-                ASSERT_NE(nullptr, animNode);
-                ASSERT_EQ(1u, animNode->getChannels().size());
-                EXPECT_EQ(dataArray, animNode->getChannels().front().timeStamps);
-                EXPECT_EQ(dataArray, animNode->getChannels().front().keyframes);
+                const auto animNodeByName = m_logicEngine.findAnimationNode("animNode");
+                const auto animNodeById = m_logicEngine.findLogicObjectById(7u);
+                ASSERT_NE(nullptr, animNodeByName);
+                ASSERT_EQ(animNodeById, animNodeByName);
+                ASSERT_EQ(1u, animNodeByName->getChannels().size());
+                EXPECT_EQ(dataArrayByName, animNodeByName->getChannels().front().timeStamps);
+                EXPECT_EQ(dataArrayByName, animNodeByName->getChannels().front().keyframes);
             }
         }
     }
@@ -518,12 +542,6 @@ namespace rlogic::internal
 
             const internal::LogicNodeDependencies& internalNodeDependencies = m_logicEngine.m_impl->getApiObjects().getLogicNodeDependencies();
 
-            // script without links is not in the internal "LogicNodeConnector"
-            EXPECT_EQ(nullptr, internalNodeDependencies.getLinkedOutput(*notLinkedScript->getInputs()->getChild("input")->m_impl));
-
-            // internal "LogicNodeConnector" has pointers from input -> output after deserialization
-            EXPECT_EQ(sourceScript->getOutputs()->getChild("output")->m_impl.get(), internalNodeDependencies.getLinkedOutput(*targetScript->getInputs()->getChild("input")->m_impl));
-
             EXPECT_TRUE(internalNodeDependencies.isLinked(sourceScript->m_impl));
             EXPECT_TRUE(internalNodeDependencies.isLinked(targetScript->m_impl));
         }
@@ -566,9 +584,6 @@ namespace rlogic::internal
         EXPECT_FALSE(m_logicEngine.isLinked(*targetScriptAfterLoading));
         EXPECT_FALSE(internalNodeDependencies.isLinked(sourceScriptAfterLoading->m_impl));
         EXPECT_FALSE(internalNodeDependencies.isLinked(sourceScriptAfterLoading->m_impl));
-
-        // "Connector" class has no links
-        EXPECT_EQ(0u, internalNodeDependencies.getLinks().size());
 
         // Internal topological graph has two unsorted nodes, before and after update()
         EXPECT_EQ(2u, (*internalNodeDependencies.getTopologicallySortedNodes()).size());
@@ -725,14 +740,23 @@ namespace rlogic::internal
 
             // Contains objects and their input/outputs
 
-            // When breaking file version, re-enable this check and re-export asset from assetProducer
-            // Consider making modules non-optional again
-            static_assert(g_FileFormatVersion == 2, "Consider making modules mandatory with next file version break");
-            //ASSERT_NE(nullptr, logicEngine.findLuaModule("nestedModuleMath"));
-            //ASSERT_NE(nullptr, logicEngine.findLuaModule("moduleMath"));
-            //ASSERT_NE(nullptr, logicEngine.findLuaModule("moduleTypes"));
+            ASSERT_NE(nullptr, logicEngine.findLuaModule("nestedModuleMath"));
+            ASSERT_NE(nullptr, logicEngine.findLuaModule("moduleMath"));
+            ASSERT_NE(nullptr, logicEngine.findLuaModule("moduleTypes"));
             ASSERT_NE(nullptr, logicEngine.findScript("script1"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("intInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("int64Input"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("vec2iInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("vec3iInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("vec4iInput"));
             EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("floatInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("vec2fInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("vec3fInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("vec4fInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("boolInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("stringInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("structInput"));
+            EXPECT_NE(nullptr, logicEngine.findScript("script1")->getInputs()->getChild("arrayInput"));
             EXPECT_NE(nullptr, logicEngine.findScript("script1")->getOutputs()->getChild("floatOutput"));
             EXPECT_NE(nullptr, logicEngine.findScript("script1")->getOutputs()->getChild("nodeTranslation"));
             EXPECT_NE(nullptr, logicEngine.findScript("script2")->getInputs()->getChild("floatInput"));
@@ -744,6 +768,7 @@ namespace rlogic::internal
             EXPECT_NE(nullptr, logicEngine.findScript("script2")->getOutputs()->getChild("floatUniform"));
             ASSERT_NE(nullptr, logicEngine.findAnimationNode("animNode"));
             EXPECT_NE(nullptr, logicEngine.findAnimationNode("animNode")->getOutputs()->getChild("channel"));
+            EXPECT_NE(nullptr, logicEngine.findTimerNode("timerNode"));
 
             EXPECT_NE(nullptr, logicEngine.findNodeBinding("nodebinding"));
             EXPECT_NE(nullptr, logicEngine.findCameraBinding("camerabinding"));
@@ -780,8 +805,7 @@ namespace rlogic::internal
             appearance->getInputValueFloat(uniform, floatValue);
             EXPECT_FLOAT_EQ(1.5f, floatValue);
 
-            static_assert(g_FileFormatVersion == 2); // When breaking file version, re-enable this check
-            //EXPECT_EQ(957, *logicEngine.findScript("script2")->getOutputs()->getChild("nestedModulesResult")->get<int32_t>());
+            EXPECT_EQ(957, *logicEngine.findScript("script2")->getOutputs()->getChild("nestedModulesResult")->get<int32_t>());
         }
     }
 }

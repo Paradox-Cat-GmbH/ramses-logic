@@ -15,6 +15,7 @@
 #include "ramses-logic/EPropertyType.h"
 #include "ramses-logic/AnimationTypes.h"
 #include "ramses-logic/ERotationType.h"
+#include "ramses-logic/LogicEngineReport.h"
 
 #include <vector>
 #include <string_view>
@@ -43,6 +44,7 @@ namespace rlogic
     class RamsesCameraBinding;
     class DataArray;
     class AnimationNode;
+    class TimerNode;
 
     /**
     * Central object which creates and manages the lifecycle and execution
@@ -123,6 +125,13 @@ namespace rlogic
         [[nodiscard]] RLOGIC_API Collection<AnimationNode> animationNodes() const;
 
         /**
+        * Returns an iterable #rlogic::Collection of all #rlogic::TimerNode instances created by this LogicEngine.
+        *
+        * @return an iterable #rlogic::Collection with all #rlogic::TimerNode created by this #LogicEngine
+        */
+        [[nodiscard]] RLOGIC_API Collection<TimerNode> timerNodes() const;
+
+        /**
          * Returns a pointer to the first occurrence of an object with a given \p name regardless of its type.
          * To convert the object to a concrete type (e.g. LuaScript) use #rlogic::LogicObject::as<Type>() e.g.:
          *   auto myLuaScript = logicEngine.findLogicObject("myLuaScript")->as<LuaScript>());
@@ -135,6 +144,20 @@ namespace rlogic
         [[nodiscard]] RLOGIC_API const LogicObject* findLogicObject(std::string_view name) const;
         /// @copydoc findLogicObject(std::string_view) const
         [[nodiscard]] RLOGIC_API LogicObject* findLogicObject(std::string_view name);
+
+        /**
+         * Returns a pointer to the first occurrence of an object with a given \p id regardless of its type.
+         * To convert the object to a concrete type (e.g. LuaScript) use #rlogic::LogicObject::as<Type>() e.g.:
+         *   auto myLuaScript = logicEngine.findLogicObjectById(1u)->as<LuaScript>());
+         * Be aware that this function behaves as \c dynamic_cast and will return nullptr (without error) if
+         * given type doesn't match the objects type. This can later lead to crash if ignored.
+         *
+         * @param id the id of the logic object to search for
+         * @return a pointer to the logic object, or nullptr if none was found
+         */
+        [[nodiscard]] RLOGIC_API const LogicObject* findLogicObjectById(uint64_t id) const;
+        /// @copydoc findLogicObjectById(uint64_t id) const
+        [[nodiscard]] RLOGIC_API LogicObject* findLogicObjectById(uint64_t id);
 
         /**
          * Returns a pointer to the first occurrence of a script with a given \p name if such exists, and nullptr otherwise.
@@ -205,6 +228,16 @@ namespace rlogic
         [[nodiscard]] RLOGIC_API const AnimationNode* findAnimationNode(std::string_view name) const;
         /// @copydoc findAnimationNode(std::string_view) const
         [[nodiscard]] RLOGIC_API AnimationNode* findAnimationNode(std::string_view name);
+
+        /**
+        * Returns a pointer to the first occurrence of an #rlogic::TimerNode with a given \p name if such exists, and nullptr otherwise.
+        *
+        * @param name the name of the #rlogic::TimerNode to search for
+        * @return a pointer to the #rlogic::TimerNode, or nullptr if none was found
+        */
+        [[nodiscard]] RLOGIC_API const TimerNode* findTimerNode(std::string_view name) const;
+        /// @copydoc findTimerNode(std::string_view) const
+        [[nodiscard]] RLOGIC_API TimerNode* findTimerNode(std::string_view name);
 
         /**
         * Creates a new Lua script from a source string. Refer to the #rlogic::LuaScript class
@@ -360,6 +393,18 @@ namespace rlogic
         RLOGIC_API AnimationNode* createAnimationNode(const AnimationChannels& channels, std::string_view name = "");
 
         /**
+        * Creates a new #rlogic::TimerNode for generate and/or propagate timing information.
+        * Refer to #rlogic::TimerNode for more information about its use.
+        *
+        * Attention! This method clears all previous errors! See also docs of #getErrors()
+        *
+        * @param name a name for the the new #rlogic::TimerNode.
+        * @return a pointer to the created object or nullptr if
+        * something went wrong during creation. In that case, use #getErrors() to obtain errors.
+        */
+        RLOGIC_API TimerNode* createTimerNode(std::string_view name = "");
+
+        /**
          * Updates all #rlogic::LogicNode's which were created by this #LogicEngine instance.
          * The order in which #rlogic::LogicNode's are executed is determined by the links created
          * between them (see #link and #unlink). #rlogic::LogicNode's which don't have any links
@@ -375,6 +420,29 @@ namespace rlogic
          * In case of an error, use #getErrors() to obtain errors.
          */
         RLOGIC_API bool update();
+
+        /**
+        * Enables collecting of statistics during call to #update which can be obtained using #getLastUpdateReport.
+        * Once enabled every subsequent call to #update will be instructed to collect various statistical data
+        * which can be useful for profiling and optimizing the network of logic nodes.
+        * Note that when enabled there is a slight performance overhead to collect the data, it is recommended
+        * to use this only during a development phase.
+        *
+        * @param enable true or false to enable or disable update reports.
+        */
+        RLOGIC_API void enableUpdateReport(bool enable);
+
+        /**
+        * Returns collection of statistics from last call to #update if reporting is enabled (#enableUpdateReport).
+        * The report contains lists of logic nodes that were executed and not executed and other useful data collected
+        * during last #update. See #rlogic::LogicEngineReport for details.
+        * The report data is generated only if previously enabled using #enableUpdateReport and is empty otherwise.
+        * The data is only relevant for the last #update and is overwritten during next #update.
+        * Note that if #update fails the report contents are undefined.
+        *
+        * @return collected statistics from last #update.
+        */
+        [[nodiscard]] RLOGIC_API LogicEngineReport getLastUpdateReport() const;
 
         /**
          * Links a property of a #rlogic::LogicNode to another #rlogic::Property of another #rlogic::LogicNode.
@@ -570,6 +638,13 @@ namespace rlogic
         */
         template <typename T>
         RLOGIC_API DataArray* createDataArrayInternal(const std::vector<T>& data, std::string_view name);
+
+        /**
+        * Internal implementation of collection getter
+        * @return collection of objects
+        */
+        template <typename T>
+        Collection<T> getObjectCollection() const;
     };
 
     template <typename T>

@@ -336,6 +336,9 @@ namespace rlogic
                 ImGui::Separator();
                 ImGui::MenuItem("Show Linked Inputs", nullptr, &m_settings.showLinkedInputs);
                 ImGui::MenuItem("Show Outputs", nullptr, &m_settings.showOutputs);
+                ImGui::Separator();
+                ImGui::MenuItem("Lua: prefer identifiers (scripts.foo)", nullptr, &m_settings.luaPreferIdentifiers);
+                ImGui::MenuItem("Lua: prefer object ids (scripts[1])", nullptr, &m_settings.luaPreferObjectIds);
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -382,6 +385,11 @@ namespace rlogic
         }
     }
 
+    bool LogicViewerGui::DrawTreeNode(rlogic::LogicObject* obj)
+    {
+        return TreeNode(obj, fmt::format("[{}]: {}", obj->getId(), obj->getName()));
+    }
+
     void LogicViewerGui::drawScripts()
     {
         const bool openScripts = ImGui::CollapsingHeader("Scripts");
@@ -397,7 +405,7 @@ namespace rlogic
         {
             for (auto* script : m_logicEngine.scripts())
             {
-                const bool open = TreeNode(script, script->getName());
+                const bool open = DrawTreeNode(script);
                 drawNodeContextMenu(script, LogicViewer::ltnScript);
                 if (open)
                 {
@@ -423,7 +431,7 @@ namespace rlogic
         {
             for (auto* obj : m_logicEngine.animationNodes())
             {
-                const bool open = TreeNode(obj, obj->getName());
+                const bool open = DrawTreeNode(obj);
                 drawNodeContextMenu(obj, LogicViewer::ltnAnimation);
                 if (open)
                 {
@@ -466,7 +474,7 @@ namespace rlogic
         {
             for (auto* obj : m_logicEngine.ramsesNodeBindings())
             {
-                const bool open = TreeNode(obj, obj->getName());
+                const bool open = DrawTreeNode(obj);
                 drawNodeContextMenu(obj, LogicViewer::ltnNode);
                 if (open)
                 {
@@ -494,7 +502,7 @@ namespace rlogic
         {
             for (auto* obj : m_logicEngine.ramsesCameraBindings())
             {
-                const bool open = TreeNode(obj, obj->getName());
+                const bool open = DrawTreeNode(obj);
                 drawNodeContextMenu(obj, LogicViewer::ltnCamera);
                 if (open)
                 {
@@ -521,7 +529,7 @@ namespace rlogic
         {
             for (auto* obj : m_logicEngine.ramsesAppearanceBindings())
             {
-                const bool open = TreeNode(obj, obj->getName());
+                const bool open = DrawTreeNode(obj);
                 drawNodeContextMenu(obj, LogicViewer::ltnAppearance);
                 if (open)
                 {
@@ -649,6 +657,18 @@ namespace rlogic
                 ImGui::TextUnformatted(fmt::format("{}: {}", name, value).c_str());
             }
             else if (ImGui::DragInt(name, &value, 0.1f))
+            {
+                prop->set(value);
+            }
+            break;
+        }
+        case rlogic::EPropertyType::Int64: {
+            auto value = prop->get<int64_t>().value();
+            if (isLinked)
+            {
+                ImGui::TextUnformatted(fmt::format("{}: {}", name, value).c_str());
+            }
+            else if (ImGui::DragScalar(name, ImGuiDataType_S64, &value, 0.1f, nullptr, nullptr, "%ll"))
             {
                 prop->set(value);
             }
@@ -801,6 +821,11 @@ namespace rlogic
             ImGui::TextUnformatted(fmt::format("{}: {}", name, value).c_str());
             break;
         }
+        case rlogic::EPropertyType::Int64: {
+            auto value = prop->get<int64_t>().value();
+            ImGui::TextUnformatted(fmt::format("{}: {}", name, value).c_str());
+            break;
+        }
         case rlogic::EPropertyType::Float: {
             auto value = prop->get<float>().value();
             ImGui::TextUnformatted(fmt::format("{}: {}", name, value).c_str());
@@ -887,26 +912,50 @@ namespace rlogic
         }
     }
 
-    void LogicViewerGui::logInputs(rlogic::LogicNode* obj, PathVector& path)
+    void LogicViewerGui::logInputs(rlogic::LogicNode* obj, const PathVector& path)
     {
-        path.push_back(obj->getName());
-        logProperty(obj->getInputs(), path);
-        path.pop_back();
+        const auto joinedPath = fmt::format("{}", fmt::join(path.begin(), path.end(), "."));
+        std::string prefix;
+        if ((m_settings.luaPreferObjectIds) || obj->getName().empty())
+        {
+            prefix = fmt::format("{}[{}]", joinedPath, obj->getId());
+        }
+        else if (m_settings.luaPreferIdentifiers)
+        {
+            prefix = fmt::format("{}.{}", joinedPath, obj->getName());
+        }
+        else
+        {
+            prefix = fmt::format("{}[\"{}\"]", joinedPath, obj->getName());
+        }
+        PathVector propertyPath;
+        logProperty(obj->getInputs(), prefix, propertyPath);
     }
 
-    void LogicViewerGui::logProperty(rlogic::Property* prop, PathVector& path)
+    void LogicViewerGui::logProperty(rlogic::Property* prop, const std::string& prefix, PathVector& path)
     {
         if (prop->isLinked())
             return;
 
         path.push_back(prop->getName());
 
-        auto strPath = fmt::format("{}[\"{}\"].value", path.front(), fmt::join(path.begin() + 1, path.end(), "\"][\""));
+        std::string strPath;
+        if (m_settings.luaPreferIdentifiers)
+        {
+            strPath = fmt::format("{}.{}.value", prefix, fmt::join(path.begin(), path.end(), "."));
+        }
+        else
+        {
+            strPath = fmt::format("{}[\"{}\"].value", prefix, fmt::join(path.begin(), path.end(), "\"][\""));
+        }
 
         switch (prop->getType())
         {
         case rlogic::EPropertyType::Int32:
             LogText(fmt::format("{} = {}\n", strPath, prop->get<int32_t>().value()));
+            break;
+        case rlogic::EPropertyType::Int64:
+            LogText(fmt::format("{} = {}\n", strPath, prop->get<int64_t>().value()));
             break;
         case rlogic::EPropertyType::Float:
             LogText(fmt::format("{} = {}\n", strPath, prop->get<float>().value()));
@@ -944,7 +993,7 @@ namespace rlogic
         case rlogic::EPropertyType::Struct:
             for (size_t i = 0U; i < prop->getChildCount(); ++i)
             {
-                logProperty(prop->getChild(i), path);
+                logProperty(prop->getChild(i), prefix, path);
             }
             break;
         case rlogic::EPropertyType::Bool: {
@@ -952,7 +1001,7 @@ namespace rlogic
             break;
         }
         case rlogic::EPropertyType::String:
-            LogText(fmt::format("{} = {}\n", strPath, prop->get<std::string>().value()));
+            LogText(fmt::format("{} = '{}'\n", strPath, prop->get<std::string>().value()));
             break;
         case rlogic::EPropertyType::Array:
             break;
@@ -997,6 +1046,14 @@ namespace rlogic
         {
             gui->m_settings.showOutputs = (flag != 0);
         }
+        else if (IniReadFlag(line, "LuaPreferObjectIds=%d", &flag))
+        {
+            gui->m_settings.luaPreferObjectIds = (flag != 0);
+        }
+        else if (IniReadFlag(line, "LuaPreferIdentifiers=%d", &flag))
+        {
+            gui->m_settings.luaPreferIdentifiers = (flag != 0);
+        }
     }
 
     void LogicViewerGui::IniWriteAll(ImGuiContext* /*context*/, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf)
@@ -1019,6 +1076,10 @@ namespace rlogic
         buf->appendf("ShowLinkedInputs=%d\n", gui->m_settings.showLinkedInputs ? 1 : 0);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) 3rd party interface
         buf->appendf("ShowOutputs=%d\n", gui->m_settings.showOutputs ? 1 : 0);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) 3rd party interface
+        buf->appendf("LuaPreferObjectIds=%d\n", gui->m_settings.luaPreferObjectIds ? 1 : 0);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) 3rd party interface
+        buf->appendf("LuaPreferIdentifiers=%d\n", gui->m_settings.luaPreferIdentifiers ? 1 : 0);
         buf->append("\n");
     }
 

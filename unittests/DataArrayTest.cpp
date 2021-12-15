@@ -164,6 +164,7 @@ namespace rlogic::internal
         {
             AllValid,
             NameMissing,
+            IdMissing,
             NoData,
             WrongDataType,
             CorruptArrayDataType,
@@ -199,6 +200,7 @@ namespace rlogic::internal
             auto dataArrayFB = rlogic_serialization::CreateDataArray(
                 builder,
                 builder.CreateString("dataarray"),
+                1u,
                 dataType,
                 unionType,
                 dataOffset
@@ -230,6 +232,7 @@ namespace rlogic::internal
             const auto dataArrayFB = rlogic_serialization::CreateDataArray(
                 flatBufferBuilder,
                 issue == ESerializationIssue::NameMissing ? 0 : flatBufferBuilder.CreateString("dataArray"),
+                issue == ESerializationIssue::IdMissing ? 0 : 1u,
                 issue == ESerializationIssue::CorruptArrayDataType ? static_cast<rlogic_serialization::EDataArrayType>(128) : rlogic_serialization::EDataArrayType::Vec2f,
                 unionType,
                 issue == ESerializationIssue::NoData ? 0 : rlogic_serialization::CreatefloatArr(flatBufferBuilder, dataOffset).Union()
@@ -255,6 +258,13 @@ namespace rlogic::internal
         EXPECT_FALSE(deserializeSerializedDataWithIssue(ADataArray_SerializationLifecycle::ESerializationIssue::NameMissing));
         EXPECT_FALSE(this->m_errorReporting.getErrors().empty());
         EXPECT_EQ("Fatal error during loading of DataArray from serialized data: missing name!", this->m_errorReporting.getErrors().front().message);
+    }
+
+    TEST_F(ADataArray_SerializationLifecycle, ReportsErrorWhenDeserializedWithoutId)
+    {
+        EXPECT_FALSE(deserializeSerializedDataWithIssue(ADataArray_SerializationLifecycle::ESerializationIssue::IdMissing));
+        EXPECT_FALSE(this->m_errorReporting.getErrors().empty());
+        EXPECT_EQ("Fatal error during loading of DataArray from serialized data: missing id!", this->m_errorReporting.getErrors().front().message);
     }
 
     TEST_F(ADataArray_SerializationLifecycle, ReportsErrorWhenDeserializedWithoutData)

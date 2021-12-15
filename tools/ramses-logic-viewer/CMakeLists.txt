@@ -33,3 +33,9 @@ else()
 endif()
 
 folderize_target(ramses-logic-viewer "tools")
+
+if (ramses-logic_ENABLE_INSTALL)
+    install(
+        TARGETS ramses-logic-viewer
+        DESTINATION ${RLOGIC_INSTALL_RUNTIME_PATH})
+endif()

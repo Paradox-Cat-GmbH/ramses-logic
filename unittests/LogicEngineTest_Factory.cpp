@@ -350,7 +350,7 @@ namespace rlogic
         struct UnknownObjectImpl: internal::LogicNodeImpl
         {
             UnknownObjectImpl()
-                : LogicNodeImpl("name")
+                : LogicNodeImpl("name", 1u)
             {
             }
 

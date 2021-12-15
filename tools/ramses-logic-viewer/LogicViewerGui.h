@@ -22,6 +22,7 @@ namespace rlogic
 {
     class LogicEngine;
     class Property;
+    class LogicObject;
     class LogicNode;
     class LogicViewer;
     class DataArray;
@@ -52,6 +53,8 @@ namespace rlogic
         void drawAppearanceBindings();
         void drawSaveDefaultLuaFile();
 
+        static bool DrawTreeNode(rlogic::LogicObject* obj);
+
         void drawNodeContextMenu(rlogic::LogicNode* obj, const std::string_view& ns);
         void drawNode(rlogic::LogicNode* obj);
         void drawProperty(rlogic::Property* prop, size_t index);
@@ -68,8 +71,8 @@ namespace rlogic
         void copyScriptInputs();
 
         using PathVector = std::vector<std::string_view>;
-        void logInputs(rlogic::LogicNode* obj, PathVector& path);
-        void logProperty(rlogic::Property* prop, PathVector& path);
+        void logInputs(rlogic::LogicNode* obj, const PathVector& path);
+        void logProperty(rlogic::Property* prop, const std::string& prefix, PathVector& path);
 
         static void* IniReadOpen(ImGuiContext* context, ImGuiSettingsHandler* handler, const char* name);
         static void IniReadLine(ImGuiContext* context, ImGuiSettingsHandler* handler, void* entry, const char* line);
@@ -89,10 +92,13 @@ namespace rlogic
             bool showAnimationNodes = false;
             bool showDataArrays     = false;
             bool showRamsesBindings = false;
+            bool luaPreferObjectIds   = false;
+            bool luaPreferIdentifiers = false;
 
             bool operator==(const Settings& rhs) const {
                 return showWindow == rhs.showWindow && showOutputs == rhs.showOutputs && showLinkedInputs == rhs.showLinkedInputs && showScripts == rhs.showScripts &&
-                       showAnimationNodes == rhs.showAnimationNodes && showDataArrays == rhs.showDataArrays && showRamsesBindings == rhs.showRamsesBindings;
+                       showAnimationNodes == rhs.showAnimationNodes && showDataArrays == rhs.showDataArrays && showRamsesBindings == rhs.showRamsesBindings &&
+                       luaPreferObjectIds == rhs.luaPreferObjectIds && luaPreferIdentifiers == rhs.luaPreferIdentifiers;
             }
 
             bool operator!=(const Settings& rhs) const {

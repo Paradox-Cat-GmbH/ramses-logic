@@ -217,9 +217,15 @@ else
         ENABLE_LTO=OFF
     fi
 
+    # Don't run benchmarks generally, except on LLVM Release build (gate job)
+    RUN_BENCHMARKS=OFF
     # enable docs generation, but only in one build to save build resources
     if [ "$TARGET" = "L64_LLVM" ]; then
         BUILD_DOCS=ON
+
+        if [ "$CONFIG" = "Release" ]; then
+            RUN_BENCHMARKS=ON
+        fi
     else
         BUILD_DOCS=OFF
     fi
@@ -295,6 +301,11 @@ else
     echo "Building against ramses logic as a source tree (submodule) and linking statically"
     bash $RL_SRC/ci/scripts/installation-check/check-build-with-submodule.sh $BUILD_DIR/build-with-submodule/ $RL_SRC $INSTALL_DIR/
 
+    if [ "$RUN_BENCHMARKS" = "ON" ]; then
+        pushd $BUILD_DIR/bin
+        ./benchmarks
+        popd
+    fi
 fi
 
 if [ "$BUILD_PACKAGE" = True ]; then

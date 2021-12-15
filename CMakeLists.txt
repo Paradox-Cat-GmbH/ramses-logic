@@ -24,7 +24,7 @@ project(RamsesLogic
     VERSION ${RLOGIC_VERSION}
     DESCRIPTION "A scripting and animation runtime for Ramses based on Lua"
     LANGUAGES CXX
-    HOMEPAGE_URL  "https://github.com/GENIVI/ramses-logic"
+    HOMEPAGE_URL  "https://github.com/COVESA/ramses-logic"
 )
 
 #==========================================================================
